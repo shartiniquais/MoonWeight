@@ -1,161 +1,215 @@
-import type { WeightEntry } from "@moonweight/shared";
-import { LineChart as LineChartIcon } from "lucide-react";
+import {
+  dayTimestamp,
+  entriesInRange,
+  toDisplayWeight,
+  type ChartRange,
+  type WeightEntry,
+  type AppSettings,
+} from "@moonweight/shared";
+import { ArrowRight, Target } from "lucide-react";
 import { useMemo, useState } from "react";
 import {
+  Area,
+  AreaChart,
   CartesianGrid,
-  Line,
-  LineChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
-
 import { formatChartDate, formatEntryDate } from "../lib/date";
-import { formatKg } from "../lib/format";
+import { formatDelta, formatWeight } from "../lib/format";
 
-type ChartRange = "7d" | "30d" | "3m" | "all";
-
-const rangeOptions: Array<{ label: string; value: ChartRange; days?: number }> = [
-  {
-    label: "7D",
-    value: "7d",
-    days: 7,
-  },
-  {
-    label: "30D",
-    value: "30d",
-    days: 30,
-  },
-  {
-    label: "3M",
-    value: "3m",
-    days: 90,
-  },
-  {
-    label: "All",
-    value: "all",
-  },
-];
-
-type ChartPoint = {
-  id: string;
-  label: string;
-  fullDate: string;
-  weightKg: number;
-  note?: string;
-};
-
+type Point = WeightEntry & { time: number; value: number };
 const ChartTooltip = ({
   active,
   payload,
+  unit,
 }: {
   active?: boolean;
-  payload?: Array<{ payload: ChartPoint; value: number }>;
+  payload?: { payload: Point }[];
+  unit: AppSettings["unit"];
 }) => {
-  if (!active || !payload?.length) {
-    return null;
-  }
-
+  if (!active || !payload?.length) return null;
   const point = payload[0].payload;
-
   return (
-    <div className="rounded-lg border border-lavender/30 bg-night/95 px-3 py-2 shadow-glow">
-      <p className="text-sm font-semibold text-bone">{formatKg(point.weightKg)}</p>
-      <p className="text-xs text-periwinkle">{formatEntryDate(point.fullDate)}</p>
-      {point.note ? <p className="mt-1 max-w-52 text-xs text-bone/80">{point.note}</p> : null}
+    <div className="chart-tooltip">
+      <p className="eyebrow">{formatEntryDate(point.date)}</p>
+      <strong>{formatWeight(point.weightKg, unit, 2)}</strong>
+      {point.note && <p className="tooltip-note">{point.note}</p>}
     </div>
   );
 };
-
-type WeightChartProps = {
+export const WeightChart = ({
+  entries,
+  settings,
+}: {
   entries: WeightEntry[];
-};
-
-export const WeightChart = ({ entries }: WeightChartProps) => {
+  settings: AppSettings;
+}) => {
   const [range, setRange] = useState<ChartRange>("30d");
-
-  const data = useMemo(() => {
-    const selectedRange = rangeOptions.find((option) => option.value === range);
-    const latest = entries[0];
-    const cutoff =
-      selectedRange?.days && latest
-        ? new Date(latest.date).getTime() - selectedRange.days * 24 * 60 * 60 * 1000
-        : null;
-
-    return entries
-      .filter((entry) => (cutoff ? new Date(entry.date).getTime() >= cutoff : true))
-      .slice()
-      .reverse()
-      .map((entry) => ({
-        id: entry.id,
-        label: formatChartDate(entry.date),
-        fullDate: entry.date,
-        weightKg: entry.weightKg,
-        note: entry.note,
-      }));
-  }, [entries, range]);
-
+  const data = useMemo(
+    () =>
+      entriesInRange(entries, range).map((entry) => ({
+        ...entry,
+        time: dayTimestamp(entry.date),
+        value: toDisplayWeight(entry.weightKg, settings.unit),
+      })),
+    [entries, range, settings.unit],
+  );
+  const first = data[0];
+  const latest = data.at(-1);
+  const target =
+    settings.targetWeightKg === null
+      ? null
+      : toDisplayWeight(settings.targetWeightKg, settings.unit);
+  const values = data.map((point) => point.value);
+  if (target !== null) values.push(target);
+  const min = values.length ? Math.min(...values) : 0;
+  const max = values.length ? Math.max(...values) : 1;
+  const padding = Math.max((max - min) * 0.18, settings.unit === "kg" ? 0.6 : 1.3);
+  const xDomain: [number, number] =
+    first && latest
+      ? first.time === latest.time
+        ? [first.time - 43_200_000, latest.time + 43_200_000]
+        : [first.time, latest.time]
+      : [0, 1];
   return (
-    <section className="rounded-lg border border-white/10 bg-card/80 p-4 shadow-insetline sm:p-5">
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-2">
-          <LineChartIcon className="h-5 w-5 text-lavender" />
-          <h2 className="text-lg font-semibold text-bone">Evolution</h2>
+    <section className="panel chart-panel" aria-label="Weight chart">
+      <div className="chart-heading">
+        <div>
+          <p className="eyebrow">WEIGHT OVER TIME</p>
+          <h2>The longer view</h2>
         </div>
-        <div className="grid grid-cols-4 rounded-lg border border-white/10 bg-night/60 p-1">
-          {rangeOptions.map((option) => (
+        <div className="segmented" role="group" aria-label="Chart time range">
+          {(["7d", "30d", "3m", "all"] as ChartRange[]).map((value) => (
             <button
-              key={option.value}
-              className={`min-h-11 rounded-md px-2 text-sm font-medium transition sm:min-h-9 sm:px-3 ${
-                range === option.value ? "bg-violet text-white" : "text-periwinkle hover:text-bone"
-              }`}
               type="button"
-              onClick={() => setRange(option.value)}
+              key={value}
+              aria-pressed={range === value}
+              onClick={() => setRange(value)}
             >
-              {option.label}
+              {{ "7d": "7 days", "30d": "30 days", "3m": "3 months", all: "All time" }[value]}
             </button>
           ))}
         </div>
       </div>
-
-      <div className="h-64 w-full sm:h-80">
-        {data.length === 0 ? (
-          <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-white/10 bg-night/35 text-center text-sm text-periwinkle">
-            Add the first entry to draw the line.
+      <div className="chart-summary">
+        <div>
+          {first && latest ? (
+            <>
+              <strong>{formatWeight(first.weightKg, settings.unit)}</strong>
+              <ArrowRight size={14} />
+              <strong>{formatWeight(latest.weightKg, settings.unit)}</strong>
+              <span className="chart-delta">
+                {data.length > 1
+                  ? formatDelta(latest.weightKg - first.weightKg, settings.unit)
+                  : "First reading"}
+              </span>
+            </>
+          ) : (
+            <span className="muted">Your story takes shape with each reading.</span>
+          )}
+        </div>
+        {target !== null && (
+          <span className="target-label">
+            <Target size={14} />
+            Target {formatWeight(settings.targetWeightKg, settings.unit)}
+          </span>
+        )}
+      </div>
+      <div className="chart-canvas">
+        {!data.length ? (
+          <div className="chart-empty">
+            <div className="empty-moon" aria-hidden="true" />
+            <h3>A little data goes a long way.</h3>
+            <p>Add your first reading to begin your chart.</p>
           </div>
         ) : (
-          <ResponsiveContainer height="100%" width="100%">
-            <LineChart data={data} margin={{ top: 12, right: 12, left: -18, bottom: 0 }}>
-              <CartesianGrid stroke="rgba(165, 180, 252, 0.12)" vertical={false} />
+          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+            <AreaChart
+              data={data}
+              margin={{ top: 20, right: 18, bottom: 4, left: -15 }}
+              accessibilityLayer
+            >
+              <defs>
+                <linearGradient id="weight-fill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#bac4ff" stopOpacity={0.17} />
+                  <stop offset="100%" stopColor="#bac4ff" stopOpacity={0.005} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid stroke="#283141" strokeDasharray="3 5" vertical={false} />
               <XAxis
-                axisLine={false}
-                dataKey="label"
-                minTickGap={20}
-                tick={{ fill: "#A5B4FC", fontSize: 12 }}
+                type="number"
+                scale="time"
+                dataKey="time"
+                domain={xDomain}
+                tickFormatter={formatChartDate}
+                minTickGap={36}
+                tick={{ fill: "#9aa7bd", fontSize: 11 }}
                 tickLine={false}
+                axisLine={false}
+                dy={10}
               />
               <YAxis
+                domain={[Math.max(0, min - padding), max + padding]}
+                tickFormatter={(value) => Number(value).toFixed(1)}
+                tick={{ fill: "#9aa7bd", fontSize: 11 }}
                 axisLine={false}
-                domain={["dataMin - 2", "dataMax + 2"]}
-                tick={{ fill: "#A5B4FC", fontSize: 12 }}
-                tickFormatter={(value) => `${value}`}
                 tickLine={false}
-                width={52}
+                width={64}
+                tickCount={5}
               />
-              <Tooltip content={<ChartTooltip />} cursor={{ stroke: "#C084FC", strokeWidth: 1 }} />
-              <Line
-                activeDot={{ r: 6, stroke: "#F3E8FF", strokeWidth: 2 }}
-                dataKey="weightKg"
-                dot={{ r: 3, strokeWidth: 2, fill: "#070A1F" }}
-                stroke="#C084FC"
-                strokeWidth={3}
-                type="monotone"
+              <Tooltip
+                content={<ChartTooltip unit={settings.unit} />}
+                cursor={{ stroke: "#64728c", strokeDasharray: "4 4" }}
               />
-            </LineChart>
+              {target !== null && (
+                <ReferenceLine y={target} stroke="#8c9cac" strokeDasharray="6 6" />
+              )}
+              <Area
+                dataKey="value"
+                type="linear"
+                stroke="#c5cdff"
+                strokeWidth={2.4}
+                fill="url(#weight-fill)"
+                isAnimationActive={false}
+                activeDot={{ r: 6, fill: "#c5cdff", stroke: "#121923", strokeWidth: 3 }}
+                dot={(props: { cx?: number; cy?: number; payload?: Point }) => (
+                  <circle
+                    key={props.payload?.id}
+                    cx={props.cx}
+                    cy={props.cy}
+                    r={props.payload?.id === latest?.id ? 5 : data.length < 15 ? 3 : 0}
+                    fill={props.payload?.id === latest?.id ? "#e7ebff" : "#121923"}
+                    stroke="#c5cdff"
+                    strokeWidth={2}
+                  />
+                )}
+              />
+            </AreaChart>
           </ResponsiveContainer>
         )}
       </div>
+      <div className="chart-footer">
+        <span>
+          <i className="legend-dot" />
+          Recorded weight · {settings.unit}
+          {target !== null && (
+            <>
+              <i className="legend-dash" />
+              Target
+            </>
+          )}
+        </span>
+        <span>
+          {data.length} readings{latest ? ` · ending ${formatEntryDate(latest.date)}` : ""}
+        </span>
+      </div>
+      <p className="chart-caption">
+        Lines connect recorded readings. Missing days are never filled in.
+      </p>
     </section>
   );
 };

@@ -1,75 +1,88 @@
-import { Moon, ShieldCheck } from "lucide-react";
-import { FormEvent, useState } from "react";
+import { ArrowRight, LockKeyhole, Moon } from "lucide-react";
+import { useState, type FormEvent } from "react";
 
-type LoginScreenProps = {
+export const LoginScreen = ({
+  error,
+  onLogin,
+}: {
   error?: string | null;
   onLogin: (password: string) => Promise<void>;
-};
-
-export const LoginScreen = ({ error, onLogin }: LoginScreenProps) => {
+}) => {
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
-
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSubmitting(true);
     setLoginError(null);
-
     try {
       await onLogin(password);
-    } catch (requestError) {
-      setLoginError(requestError instanceof Error ? requestError.message : "Unable to sign in");
+    } catch (err) {
+      setLoginError(err instanceof Error ? err.message : "Unable to sign in.");
     } finally {
       setSubmitting(false);
     }
   };
-
   return (
-    <main className="mystic-shell flex min-h-screen items-center justify-center px-4 py-8 text-bone">
-      <form
-        className="w-full max-w-sm rounded-lg border border-white/10 bg-card/90 p-5 shadow-glow"
-        onSubmit={handleSubmit}
-      >
-        <div className="mb-6 flex items-center gap-3">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-lavender/30 bg-deep text-lavender shadow-glow">
-            <Moon className="h-6 w-6" />
-          </div>
-          <div>
-            <p className="text-xs uppercase text-periwinkle">MoonWeight</p>
-            <h1 className="text-2xl font-semibold text-bone">Sign in</h1>
-          </div>
+    <main className="login-page">
+      <div className="login-story">
+        <a className="brand" href="/">
+          <span className="brand-icon">
+            <Moon size={22} />
+          </span>
+          MoonWeight<span className="version">01</span>
+        </a>
+        <div className="login-illustration" aria-hidden="true">
+          <div className="moon-halo" />
+          <div className="moon-sphere" />
+          <span className="orbit-dot" />
         </div>
-
-        <label className="block text-sm font-medium text-bone" htmlFor="adminPassword">
-          Password
-        </label>
+        <p className="eyebrow">YOUR DATA. YOUR SPACE.</p>
+        <h1>
+          Small entries.
+          <br />
+          <em>A clearer picture.</em>
+        </h1>
+        <p className="login-description">
+          A quiet place to record your weight and see it over time. Private, by design.
+        </p>
+      </div>
+      <form className="panel login-form" onSubmit={submit}>
+        <span className="icon-disc">
+          <LockKeyhole size={20} />
+        </span>
+        <h2>Welcome back.</h2>
+        <p className="muted">Sign in to your personal tracker.</p>
+        <label htmlFor="admin-password">Password</label>
         <input
-          id="adminPassword"
+          id="admin-password"
+          className="input"
+          type="password"
           autoComplete="current-password"
           autoFocus
-          className="mt-2 min-h-12 w-full rounded-lg border border-white/10 bg-night/65 px-3 text-base text-bone outline-none shadow-insetline placeholder:text-periwinkle/50 focus:border-lavender/70"
-          type="password"
           value={password}
-          onChange={(event) => setPassword(event.target.value)}
+          onChange={(e) => setPassword(e.target.value)}
+          maxLength={1024}
           required
-        />
-
-        {loginError || error ? (
-          <div className="mt-4 rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-bone">
-            {loginError ?? error}
-          </div>
-        ) : null}
-
-        <button
-          className="mt-5 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-violet px-4 text-sm font-semibold text-white shadow-glow transition hover:bg-lavender hover:text-night disabled:cursor-not-allowed disabled:opacity-60"
-          type="submit"
           disabled={submitting}
-        >
-          <ShieldCheck className="h-4 w-4" />
-          {submitting ? "Signing in" : "Sign in"}
+          aria-describedby={loginError || error ? "login-error" : undefined}
+        />
+        {(loginError || error) && (
+          <p id="login-error" role="alert" className="notice notice-error">
+            {loginError ?? error}
+          </p>
+        )}
+        <button className="button primary" type="submit" disabled={submitting}>
+          {submitting ? "Signing in…" : "Sign in"}
+          <ArrowRight size={17} />
         </button>
+        <p className="form-footnote">
+          <LockKeyhole size={12} /> A private space on your own server.
+        </p>
       </form>
+      <footer className="login-footer">
+        MoonWeight <span>Private weight tracking · v1.0</span>
+      </footer>
     </main>
   );
 };

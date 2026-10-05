@@ -1,66 +1,69 @@
-import type { ApiError } from "@moonweight/shared";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { logger } from "hono/logger";
-
+import { bodyLimit } from "hono/body-limit";
+import { secureHeaders } from "hono/secure-headers";
+import { HTTPException } from "hono/http-exception";
 import { env } from "./config.js";
+import { postgresClient } from "./db/client.js";
 import { requireAuth } from "./middleware/auth.js";
 import { authRoutes } from "./routes/auth.js";
 import { weightsRoutes } from "./routes/weights.js";
+import { settingsRoutes } from "./routes/settings.js";
 
 export const app = new Hono();
-
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
-
-const hasNestedErrorCode = (value: unknown, code: string): boolean => {
-  if (!isRecord(value)) {
-    return false;
+app.use(secureHeaders({ strictTransportSecurity: env.cookieSecure ? "max-age=31536000" : false }));
+app.use("/api/*", async (c, next) => {
+  c.header("Cache-Control", "no-store");
+  if (!["GET", "HEAD", "OPTIONS"].includes(c.req.method)) {
+    const origin = c.req.header("Origin");
+    if (origin && !env.corsOrigins.includes(origin))
+      return c.json({ error: "Origin is not allowed" }, 403);
+    if (c.req.header("Sec-Fetch-Site") === "cross-site")
+      return c.json({ error: "Cross-site requests are not allowed" }, 403);
+    // All writes (including logout) require JSON. Cross-origin HTML forms cannot meet this.
+    if (
+      (c.req.header("Content-Type") ?? "").split(";")[0].trim().toLowerCase() !== "application/json"
+    ) {
+      return c.json({ error: "Content-Type must be application/json" }, 415);
+    }
   }
-
-  if (value.code === code) {
-    return true;
-  }
-
-  if (hasNestedErrorCode(value.cause, code)) {
-    return true;
-  }
-
-  if (Array.isArray(value.errors)) {
-    return value.errors.some((error) => hasNestedErrorCode(error, code));
-  }
-
-  return false;
-};
-
-app.use(logger());
+  await next();
+});
 app.use(
   "/api/*",
   cors({
-    origin: env.corsOrigin === "*" ? "*" : env.corsOrigin.split(",").map((origin) => origin.trim()),
+    origin: env.corsOrigins,
     credentials: true,
+    allowMethods: ["GET", "POST", "PATCH", "PUT", "DELETE"],
+    allowHeaders: ["Content-Type"],
   }),
 );
-
-app.get("/health", (c) =>
-  c.json({
-    status: "ok",
-  }),
-);
-
+app.use("/api/*", (c, next) => {
+  // JSON adds keys and escaping to the CSV preview's 1 MB maximum.
+  const megabytes = c.req.path === "/api/weights/import" ? 2 : 1;
+  return bodyLimit({
+    maxSize: megabytes * 1_048_576,
+    onError: (c) => c.json({ error: `Request must be ${megabytes} MB or smaller` }, 413),
+  })(c, next);
+});
+app.get("/health", async (c) => {
+  await postgresClient`SELECT 1`;
+  return c.json({ status: "ok" });
+});
 app.route("/api", authRoutes);
-app.use("/api/weights/*", requireAuth);
-app.use("/api/weights", requireAuth);
-app.use("/api/stats", requireAuth);
+app.use("/api/*", requireAuth);
 app.route("/api", weightsRoutes);
-
-app.notFound((c) => c.json<ApiError>({ error: "Not found" }, 404));
-
+app.route("/api", settingsRoutes);
+app.notFound((c) => c.json({ error: "Not found" }, 404));
 app.onError((error, c) => {
-  if (hasNestedErrorCode(error, "ECONNREFUSED")) {
-    console.error("Database connection failed. Check PostgreSQL and DATABASE_URL.");
-    return c.json<ApiError>({ error: "Database is unavailable. Check PostgreSQL and DATABASE_URL." }, 503);
-  }
-
-  console.error(error);
-  return c.json<ApiError>({ error: "Internal server error" }, 500);
+  if (error instanceof HTTPException)
+    return c.json(
+      {
+        error:
+          error.status === 413 ? "Request body is too large" : "Request could not be processed",
+      },
+      error.status,
+    );
+  console.error("API request failed", { path: c.req.path });
+  return c.json({ error: "The service is unavailable. Please try again." }, 503);
 });

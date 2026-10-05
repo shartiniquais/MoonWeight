@@ -1,28 +1,18 @@
 export const todayInputValue = () => {
   const date = new Date();
-  return toDateInputValue(date.toISOString());
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 };
-
-export const toDateInputValue = (value: string) => {
-  const date = new Date(value);
-  const year = date.getFullYear();
-  const month = `${date.getMonth() + 1}`.padStart(2, "0");
-  const day = `${date.getDate()}`.padStart(2, "0");
-
-  return `${year}-${month}-${day}`;
-};
-
-export const dateInputToIso = (value: string) => new Date(`${value}T12:00:00`).toISOString();
-
+export const toDateInputValue = (value: string) => value.slice(0, 10);
 export const formatEntryDate = (value: string) =>
-  new Intl.DateTimeFormat(undefined, {
-    day: "2-digit",
+  new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
     month: "short",
     year: "numeric",
-  }).format(new Date(value));
-
-export const formatChartDate = (value: string) =>
-  new Intl.DateTimeFormat(undefined, {
-    day: "2-digit",
+    timeZone: "UTC",
+  }).format(new Date(`${value}T00:00:00Z`));
+export const formatChartDate = (value: string | number) =>
+  new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
     month: "short",
-  }).format(new Date(value));
+    timeZone: "UTC",
+  }).format(typeof value === "number" ? new Date(value) : new Date(`${value}T00:00:00Z`));

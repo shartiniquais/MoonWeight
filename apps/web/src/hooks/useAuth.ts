@@ -27,6 +27,12 @@ export const useAuth = () => {
 
   useEffect(() => {
     void checkAuth();
+    const expire = () => {
+      setAuthenticated(false);
+      setAuthError("Your session has ended. Please sign in again.");
+    };
+    window.addEventListener("moonweight:unauthorized", expire);
+    return () => window.removeEventListener("moonweight:unauthorized", expire);
   }, [checkAuth]);
 
   const login = async (password: string) => {

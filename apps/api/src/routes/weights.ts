@@ -1,6 +1,9 @@
 import {
   createWeightEntryInputSchema,
   updateWeightEntryInputSchema,
+  importInputSchema,
+  exportCsv,
+  entryIdSchema,
   type ApiError,
 } from "@moonweight/shared";
 import { Hono } from "hono";
@@ -11,6 +14,7 @@ import {
   getWeightEntry,
   listWeightEntries,
   updateWeightEntry,
+  importWeightEntries,
 } from "../repositories/weights.js";
 import { buildWeightStats } from "../services/stats.js";
 
@@ -27,6 +31,28 @@ const readJson = async (request: Request) => {
 weightsRoutes.get("/weights", async (c) => {
   const entries = await listWeightEntries();
   return c.json(entries);
+});
+
+weightsRoutes.get("/weights/export", async (c) => {
+  c.header("Content-Type", "text/csv; charset=utf-8");
+  c.header("Content-Disposition", 'attachment; filename="moonweight.csv"');
+  return c.body(exportCsv(await listWeightEntries()));
+});
+
+weightsRoutes.post("/weights/import", async (c) => {
+  const parsed = importInputSchema.safeParse(await readJson(c.req.raw));
+  if (!parsed.success)
+    return c.json(
+      { error: "Invalid import. No rows were saved.", details: parsed.error.flatten() },
+      400,
+    );
+  return c.json(await importWeightEntries(parsed.data.entries), 201);
+});
+
+weightsRoutes.use("/weights/:id", async (c, next) => {
+  if (!entryIdSchema.safeParse(c.req.param("id")).success)
+    return c.json({ error: "Invalid entry ID" }, 400);
+  await next();
 });
 
 weightsRoutes.post("/weights", async (c) => {

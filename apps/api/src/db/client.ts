@@ -6,6 +6,8 @@ import * as schema from "./schema.js";
 
 export const postgresClient = postgres(env.databaseUrl, {
   max: 10,
+  connect_timeout: 5,
+  onnotice: () => {},
 });
 
 export const db = drizzle(postgresClient, {

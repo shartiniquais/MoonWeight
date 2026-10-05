@@ -1,29 +1,31 @@
 {
   "name": "@moonweight/web",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --host 0.0.0.0",
+    "dev": "vite --host 127.0.0.1",
     "build": "tsc -p tsconfig.json && vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "preview": "vite preview --host 0.0.0.0"
+    "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {
-    "@moonweight/shared": "0.1.0",
+    "@fontsource-variable/dm-sans": "^5.3.0",
+    "@fontsource-variable/newsreader": "^5.3.0",
+    "@moonweight/shared": "1.0.0",
     "lucide-react": "^0.468.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "recharts": "^3.8.1"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
-    "@vitejs/plugin-react": "^4.3.4",
-    "autoprefixer": "^10.4.20",
+    "@vitejs/plugin-react": "^4.7.0",
     "postcss": "^8.4.49",
-    "tailwindcss": "^3.4.17",
+    "tailwindcss": "^4.3.3",
     "typescript": "^5.7.3",
-    "vite": "^6.0.7"
+    "vite": "^7.3.6"
   }
 }

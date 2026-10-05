@@ -8,3 +8,9 @@ npm-debug.log*
 coverage
 .DS_Store
 *.local
+.codex-*
+test-results
+playwright-report
+*.dump
+*.backup
+*.sql.gz

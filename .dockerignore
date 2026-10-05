@@ -1,8 +1,15 @@
 .git
 node_modules
+**/node_modules
 dist
+**/dist
 coverage
 .env
 .env.*
 *.log
 README.md
+.codex-*
+docs
+tests
+test-results
+playwright-report

@@ -1,101 +1,93 @@
-import type {
-  CreateWeightEntryInput,
-  UpdateWeightEntryInput,
-  WeightEntry,
-  WeightStats,
+import {
+  buildWeightStats,
+  sortEntries,
+  type AppSettings,
+  type CreateWeightEntryInput,
+  type UpdateWeightEntryInput,
+  type WeightEntry,
 } from "@moonweight/shared";
-import { useCallback, useEffect, useState } from "react";
-
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiClient } from "../api/client";
 
-export const useWeights = (enabled: boolean) => {
+export const useWeights = () => {
   const [entries, setEntries] = useState<WeightEntry[]>([]);
-  const [stats, setStats] = useState<WeightStats | null>(null);
+  const [settings, setSettings] = useState<AppSettings>({ unit: "kg", targetWeightKg: null });
   const [loading, setLoading] = useState(true);
+  const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
+  const generation = useRef(0);
   const refresh = useCallback(async () => {
-    if (!enabled) {
-      setEntries([]);
-      setStats(null);
-      setLoading(false);
-      setError(null);
-      return;
-    }
-
+    const current = ++generation.current;
     setLoading(true);
     setError(null);
-
     try {
-      const [nextEntries, nextStats] = await Promise.all([apiClient.listWeights(), apiClient.getStats()]);
-      setEntries(nextEntries);
-      setStats(nextStats);
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Unable to load weight entries");
+      const [nextEntries, nextSettings] = await Promise.all([
+        apiClient.listWeights(),
+        apiClient.getSettings(),
+      ]);
+      if (current !== generation.current) return;
+      setEntries(sortEntries(nextEntries));
+      setSettings(nextSettings);
+      setLoaded(true);
+    } catch (err) {
+      if (current === generation.current)
+        setError(err instanceof Error ? err.message : "Unable to load your tracker.");
     } finally {
-      setLoading(false);
+      if (current === generation.current) setLoading(false);
     }
-  }, [enabled]);
-
+  }, []);
   useEffect(() => {
     void refresh();
+    return () => {
+      generation.current++;
+    };
   }, [refresh]);
-
-  const createEntry = async (input: CreateWeightEntryInput) => {
+  const mutation = async <T>(action: () => Promise<T>, apply: (result: T) => void): Promise<T> => {
+    ++generation.current; // A stale refresh must not overwrite a completed write.
+    setLoading(false);
     setSaving(true);
-    setError(null);
-
     try {
-      await apiClient.createWeight(input);
-      await refresh();
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Unable to save weight entry");
-      throw requestError;
+      const result = await action();
+      apply(result);
+      setError(null);
+      return result;
     } finally {
       setSaving(false);
     }
   };
-
-  const updateEntry = async (id: string, input: UpdateWeightEntryInput) => {
-    setSaving(true);
-    setError(null);
-
-    try {
-      await apiClient.updateWeight(id, input);
-      await refresh();
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Unable to update weight entry");
-      throw requestError;
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const deleteEntry = async (id: string) => {
-    setSaving(true);
-    setError(null);
-
-    try {
-      await apiClient.deleteWeight(id);
-      await refresh();
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Unable to delete weight entry");
-      throw requestError;
-    } finally {
-      setSaving(false);
-    }
-  };
-
   return {
     entries,
-    stats,
+    settings,
+    stats: useMemo(() => buildWeightStats(entries), [entries]),
     loading,
+    loaded,
     saving,
     error,
     refresh,
-    createEntry,
-    updateEntry,
-    deleteEntry,
+    createEntry: (input: CreateWeightEntryInput) =>
+      mutation(
+        () => apiClient.createWeight(input),
+        (entry) => setEntries((old) => sortEntries([entry, ...old])),
+      ),
+    updateEntry: (id: string, input: UpdateWeightEntryInput) =>
+      mutation(
+        () => apiClient.updateWeight(id, input),
+        (entry) => setEntries((old) => sortEntries(old.map((e) => (e.id === id ? entry : e)))),
+      ),
+    deleteEntry: (id: string) =>
+      mutation(
+        () => apiClient.deleteWeight(id),
+        () => setEntries((old) => old.filter((e) => e.id !== id)),
+      ),
+    saveSettings: (input: AppSettings) =>
+      mutation(() => apiClient.saveSettings(input), setSettings),
+    importEntries: (input: CreateWeightEntryInput[]) =>
+      mutation(
+        () => apiClient.importEntries(input),
+        () => {
+          void refresh();
+        },
+      ),
   };
 };

@@ -1,0 +1,48 @@
+name: Quality
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: moonweight
+          POSTGRES_PASSWORD: fictional-ci-database-password
+          POSTGRES_DB: moonweight
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U moonweight -d moonweight"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: moonweight
+      POSTGRES_USER: moonweight
+      POSTGRES_PASSWORD: fictional-ci-database-password
+      ADMIN_PASSWORD: fictional-ci-login-password
+      SESSION_SECRET: fictional-ci-session-secret-at-least-32-characters
+      CORS_ORIGIN: http://localhost:5173
+      COOKIE_SECURE: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run typecheck
+      - run: npm run test
+      - run: npm run build
+      - run: npm audit
+      - run: npm run test:integration
+      - run: npm run demo:seed
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e

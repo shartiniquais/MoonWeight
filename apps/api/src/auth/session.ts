@@ -1,62 +1,41 @@
-import { timingSafeEqual, createHmac } from "node:crypto";
-
+import { timingSafeEqual, createHmac, randomBytes } from "node:crypto";
+import { and, eq, gt, lte } from "drizzle-orm";
 import { env } from "../config.js";
-
-const SESSION_DURATION_SECONDS = 60 * 60 * 24 * 30;
-
-type SessionPayload = {
-  sub: "admin";
-  exp: number;
-};
-
-const base64UrlEncode = (value: string | Buffer) => Buffer.from(value).toString("base64url");
-
-const base64UrlDecode = (value: string) => Buffer.from(value, "base64url").toString("utf8");
-
-const sign = (value: string) => createHmac("sha256", env.sessionSecret).update(value).digest("base64url");
-
-const safeEqual = (left: string, right: string) => {
-  const leftBuffer = Buffer.from(left);
-  const rightBuffer = Buffer.from(right);
-
-  if (leftBuffer.length !== rightBuffer.length) {
-    return false;
-  }
-
-  return timingSafeEqual(leftBuffer, rightBuffer);
-};
+import { db } from "../db/client.js";
+import { sessions } from "../db/schema.js";
 
 export const sessionCookieName = "moonweight_session";
-
-export const sessionCookieMaxAge = SESSION_DURATION_SECONDS;
-
-export const createSessionToken = () => {
-  const payload: SessionPayload = {
-    sub: "admin",
-    exp: Math.floor(Date.now() / 1000) + SESSION_DURATION_SECONDS,
-  };
-
-  const encodedPayload = base64UrlEncode(JSON.stringify(payload));
-  return `${encodedPayload}.${sign(encodedPayload)}`;
+export const sessionCookieMaxAge = 60 * 60 * 24 * 30;
+// Changing either secret or password invalidates every existing session.
+const hashToken = (token: string) =>
+  createHmac("sha256", env.sessionSecret)
+    .update(env.adminPassword)
+    .update("\0")
+    .update(token)
+    .digest("hex");
+const passwordDigest = (value: string) =>
+  createHmac("sha256", env.sessionSecret).update(value).digest();
+export const verifyAdminPassword = (password: string) =>
+  timingSafeEqual(passwordDigest(password), passwordDigest(env.adminPassword));
+export const createSessionToken = async () => {
+  const token = randomBytes(32).toString("base64url");
+  await db.delete(sessions).where(lte(sessions.expiresAt, new Date()));
+  await db.insert(sessions).values({
+    tokenHash: hashToken(token),
+    expiresAt: new Date(Date.now() + sessionCookieMaxAge * 1000),
+  });
+  return token;
 };
-
-export const verifySessionToken = (token?: string) => {
-  if (!token) {
-    return false;
-  }
-
-  const [encodedPayload, signature] = token.split(".");
-
-  if (!encodedPayload || !signature || !safeEqual(sign(encodedPayload), signature)) {
-    return false;
-  }
-
-  try {
-    const payload = JSON.parse(base64UrlDecode(encodedPayload)) as SessionPayload;
-    return payload.sub === "admin" && payload.exp > Math.floor(Date.now() / 1000);
-  } catch {
-    return false;
-  }
+export const verifySessionToken = async (token?: string) => {
+  if (!token || !/^[A-Za-z0-9_-]{43}$/.test(token)) return false;
+  const [row] = await db
+    .select({ tokenHash: sessions.tokenHash })
+    .from(sessions)
+    .where(and(eq(sessions.tokenHash, hashToken(token)), gt(sessions.expiresAt, new Date())))
+    .limit(1);
+  return Boolean(row);
 };
-
-export const verifyAdminPassword = (password: string) => safeEqual(password, env.adminPassword);
+export const revokeSession = async (token?: string) => {
+  if (token && /^[A-Za-z0-9_-]{43}$/.test(token))
+    await db.delete(sessions).where(eq(sessions.tokenHash, hashToken(token)));
+};

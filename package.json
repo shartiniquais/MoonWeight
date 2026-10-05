@@ -1,6 +1,6 @@
 {
   "name": "moonweight",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "workspaces": [
@@ -8,13 +8,34 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "npm run build -w packages/shared && concurrently -n api,web -c magenta,cyan \"npm run dev -w apps/api\" \"npm run dev -w apps/web\"",
+    "dev": "npm run build -w packages/shared && concurrently -k -n shared,api,web -c blue,magenta,cyan \"npm run dev -w packages/shared\" \"npm run dev -w apps/api\" \"npm run dev -w apps/web\"",
     "build": "npm run build -w packages/shared && npm run build -w apps/api && npm run build -w apps/web",
-    "typecheck": "npm run typecheck -w packages/shared && npm run typecheck -w apps/api && npm run typecheck -w apps/web",
-    "db:migrate": "npm run db:migrate -w apps/api"
+    "typecheck": "npm run build -w packages/shared && npm run typecheck -w packages/shared && npm run typecheck -w apps/api && npm run typecheck -w apps/web && tsc -p tsconfig.tests.json",
+    "db:migrate": "npm run db:migrate -w apps/api",
+    "test": "npm run build -w packages/shared && vitest run",
+    "test:watch": "vitest",
+    "test:integration": "npm run build -w packages/shared && tsx scripts/test-integration.ts",
+    "test:e2e": "playwright test",
+    "demo:seed": "npm run build -w packages/shared && npm run demo:seed -w apps/api",
+    "portfolio:capture": "node scripts/capture-portfolio.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": "^1.63.0",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
+    "@types/papaparse": "^5.5.2",
     "concurrently": "^9.1.2",
-    "typescript": "^5.7.3"
+    "jsdom": "^26.1.0",
+    "prettier": "^3.9.9",
+    "typescript": "^5.7.3",
+    "vitest": "^5.0.3"
+  },
+  "engines": {
+    "node": ">=22.12.0",
+    "npm": ">=10"
   }
 }

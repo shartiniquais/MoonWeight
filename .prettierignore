@@ -1,0 +1,14 @@
+node_modules
+**/node_modules
+dist
+**/dist
+coverage
+test-results
+playwright-report
+package-lock.json
+.env
+.env.*
+.codex-*
+*.dump
+*.backup
+*.sql.gz

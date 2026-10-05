@@ -1,10 +1,10 @@
-import { loginInputSchema, type ApiError, type AuthStatus } from "@moonweight/shared";
+import { loginInputSchema } from "@moonweight/shared";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { Hono } from "hono";
-
 import { env } from "../config.js";
 import {
   createSessionToken,
+  revokeSession,
   sessionCookieMaxAge,
   sessionCookieName,
   verifyAdminPassword,
@@ -12,55 +12,47 @@ import {
 } from "../auth/session.js";
 
 export const authRoutes = new Hono();
-
-const cookieOptions = {
+const cookieOptions = () => ({
   httpOnly: true,
   maxAge: sessionCookieMaxAge,
   path: "/",
-  sameSite: "Lax" as const,
-  secure: env.isProduction,
-};
-
-const readJson = async (request: Request) => {
-  try {
-    return await request.json();
-  } catch {
-    return null;
-  }
-};
-
-authRoutes.get("/auth/me", (c) => {
-  const authenticated = verifySessionToken(getCookie(c, sessionCookieName));
-  return c.json<AuthStatus>({ authenticated });
+  sameSite: "Strict" as const,
+  secure: env.cookieSecure,
 });
-
+// Single-user deployment: global cap avoids trusting spoofable forwarding headers.
+// Failed attempts are bounded in memory and expire; restarts clear the limiter.
+const failures: number[] = [];
+authRoutes.get("/auth/me", async (c) =>
+  c.json({ authenticated: await verifySessionToken(getCookie(c, sessionCookieName)) }),
+);
 authRoutes.post("/auth/login", async (c) => {
-  const body = await readJson(c.req.raw);
-  const parsed = loginInputSchema.safeParse(body);
-
+  const now = Date.now();
+  while (failures.length && failures[0] <= now - 15 * 60_000) failures.shift();
+  if (failures.length >= 10) {
+    c.header("Retry-After", String(Math.ceil((failures[0] + 15 * 60_000 - now) / 1000)));
+    return c.json({ error: "Too many sign-in attempts. Please try again later." }, 429);
+  }
+  const parsed = loginInputSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) {
-    return c.json<ApiError>(
-      {
-        error: "Invalid login request",
-        details: parsed.error.flatten(),
-      },
-      400,
-    );
+    failures.push(now);
+    return c.json({ error: "Enter a valid password" }, 400);
   }
-
   if (!verifyAdminPassword(parsed.data.password)) {
-    return c.json<ApiError>({ error: "Invalid password" }, 401);
+    failures.push(now);
+    return c.json({ error: "Unable to sign in. Check your password." }, 401);
   }
-
-  setCookie(c, sessionCookieName, createSessionToken(), cookieOptions);
-  return c.json<AuthStatus>({ authenticated: true });
+  // Replacing a session also revokes the previous token in this browser.
+  await revokeSession(getCookie(c, sessionCookieName));
+  setCookie(c, sessionCookieName, await createSessionToken(), cookieOptions());
+  return c.json({ authenticated: true });
 });
-
-authRoutes.post("/auth/logout", (c) => {
+authRoutes.post("/auth/logout", async (c) => {
+  await revokeSession(getCookie(c, sessionCookieName));
   deleteCookie(c, sessionCookieName, {
     path: "/",
-    secure: env.isProduction,
+    httpOnly: true,
+    secure: env.cookieSecure,
+    sameSite: "Strict",
   });
-
-  return c.json<AuthStatus>({ authenticated: false });
+  return c.json({ authenticated: false });
 });

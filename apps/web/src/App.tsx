@@ -1,144 +1,386 @@
-import type { CreateWeightEntryInput, UpdateWeightEntryInput, WeightEntry } from "@moonweight/shared";
-import { LogOut, Moon, Plus, RefreshCw, Shield } from "lucide-react";
-import { useRef, useState } from "react";
-
+import { type CreateWeightEntryInput, type WeightEntry } from "@moonweight/shared";
+import {
+  Download,
+  FileUp,
+  LoaderCircle,
+  LogOut,
+  Moon,
+  Plus,
+  RefreshCw,
+  Settings2,
+  ShieldCheck,
+  X,
+} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { apiClient } from "./api/client";
+import { Dialog } from "./components/Dialog";
 import { EntryForm } from "./components/EntryForm";
 import { HistoryList } from "./components/HistoryList";
+import { ImportDialog } from "./components/ImportDialog";
 import { LoginScreen } from "./components/LoginScreen";
+import { SettingsDialog } from "./components/SettingsDialog";
 import { StatsGrid } from "./components/StatsGrid";
 import { WeightChart } from "./components/WeightChart";
 import { useAuth } from "./hooks/useAuth";
 import { useWeights } from "./hooks/useWeights";
+import { formatEntryDate } from "./lib/date";
+import { formatWeight } from "./lib/format";
 
-export const App = () => {
-  const { authenticated, checkingAuth, authError, login, logout } = useAuth();
-  const { entries, stats, loading, saving, error, refresh, createEntry, updateEntry, deleteEntry } =
-    useWeights(authenticated);
-  const [editingEntry, setEditingEntry] = useState<WeightEntry | null>(null);
-  const [formFocusKey, setFormFocusKey] = useState(0);
-  const formSectionRef = useRef<HTMLDivElement | null>(null);
-
-  const handleSubmit = async (input: CreateWeightEntryInput | UpdateWeightEntryInput) => {
-    if (editingEntry) {
-      await updateEntry(editingEntry.id, input);
-      setEditingEntry(null);
-      return;
+const Tracker = ({ onLogout }: { onLogout: () => Promise<void> }) => {
+  const {
+    entries,
+    stats,
+    settings,
+    loaded,
+    loading,
+    saving,
+    error,
+    refresh,
+    createEntry,
+    updateEntry,
+    deleteEntry,
+    saveSettings,
+    importEntries,
+  } = useWeights();
+  const [editing, setEditing] = useState<WeightEntry | null>(null);
+  const [deleting, setDeleting] = useState<WeightEntry | null>(null);
+  const [dialog, setDialog] = useState<"settings" | "import" | null>(null);
+  const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [toolbarBusy, setToolbarBusy] = useState(false);
+  const [focusKey, setFocusKey] = useState(0);
+  const formRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (notice && !notice.error) {
+      const timer = window.setTimeout(() => setNotice(null), 5000);
+      return () => window.clearTimeout(timer);
     }
-
-    await createEntry(input as CreateWeightEntryInput);
+  }, [notice]);
+  const notify = (text: string) => setNotice({ text });
+  const add = async (input: CreateWeightEntryInput) => {
+    await createEntry(input);
+    notify("Reading added. Your picture is up to date.");
   };
-
-  const moveToForm = () => {
-    setFormFocusKey((key) => key + 1);
-    window.requestAnimationFrame(() => {
-      formSectionRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
+  const remove = async () => {
+    if (!deleting) return;
+    setDeleteError(null);
+    try {
+      await deleteEntry(deleting.id);
+      setDeleting(null);
+      notify("Entry deleted.");
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Unable to delete. Please try again.");
+    }
+  };
+  const toolbarAction = async (action: () => Promise<void>) => {
+    setToolbarBusy(true);
+    try {
+      await action();
+    } catch (err) {
+      setNotice({
+        text: err instanceof Error ? err.message : "Unable to complete the action.",
+        error: true,
       });
+    } finally {
+      setToolbarBusy(false);
+    }
+  };
+  const exportData = async () => {
+    const csv = await apiClient.exportCsv();
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "moonweight.csv";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    notify("CSV exported in kilograms.");
+  };
+  const goToEntry = () => {
+    formRef.current?.scrollIntoView({
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+      block: "start",
     });
+    setFocusKey((key) => key + 1);
   };
-
-  const handleStartNewEntry = () => {
-    setEditingEntry(null);
-    moveToForm();
-  };
-
-  const handleEditEntry = (entry: WeightEntry) => {
-    setEditingEntry(entry);
-    moveToForm();
-  };
-
-  if (checkingAuth) {
-    return (
-      <main className="mystic-shell flex min-h-screen items-center justify-center px-4 text-bone">
-        <div className="rounded-lg border border-white/10 bg-card/90 px-5 py-4 text-sm text-periwinkle shadow-glow">
-          Checking session
-        </div>
-      </main>
-    );
-  }
-
-  if (!authenticated) {
-    return <LoginScreen error={authError} onLogin={login} />;
-  }
-
+  const disabled = saving || toolbarBusy || loading;
+  const demo = entries.some((entry) => entry.note?.includes("[DEMO]"));
   return (
-    <main className="mystic-shell min-h-screen text-bone">
-      <div className="relative mx-auto flex w-full max-w-7xl flex-col gap-4 px-3 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-3 sm:gap-5 sm:px-6 sm:py-5 lg:px-8">
-        <header className="flex flex-col gap-3 rounded-lg border border-white/10 bg-surface/80 p-3 shadow-insetline sm:flex-row sm:items-center sm:justify-between sm:p-4">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-lavender/30 bg-deep text-lavender shadow-glow sm:h-12 sm:w-12">
-              <Moon className="h-5 w-5 sm:h-6 sm:w-6" />
-            </div>
-            <div className="min-w-0">
-              <h1 className="text-2xl font-semibold text-bone sm:text-3xl">MoonWeight</h1>
-              <p className="text-sm text-periwinkle">Private weight tracking for browser and mobile.</p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex min-h-11 items-center gap-2 rounded-md border border-white/10 bg-night/60 px-3 text-sm text-periwinkle">
-              <Shield className="h-4 w-4 text-success" />
-              Local first access
+    <div className="app-shell">
+      <a className="skip-link" href="#main">
+        Skip to content
+      </a>
+      <header className="site-header">
+        <div className="header-inner">
+          <a className="brand" href="/">
+            <span className="brand-icon">
+              <Moon size={21} />
             </span>
+            MoonWeight<span className="version">01</span>
+          </a>
+          <nav className="main-nav" aria-label="Main navigation">
+            <a href="#overview">Overview</a>
+            <a href="#history">History</a>
+          </nav>
+          <div className="header-actions">
             <button
-              className="inline-flex min-h-11 items-center gap-2 rounded-md border border-white/10 bg-night/60 px-3 text-sm font-medium text-periwinkle transition hover:border-lavender/60 hover:text-bone disabled:cursor-not-allowed disabled:opacity-60"
+              className="icon-button"
+              type="button"
+              aria-label="Preferences"
+              title="Preferences"
+              disabled={disabled || !loaded}
+              onClick={() => setDialog("settings")}
+            >
+              <Settings2 size={19} />
+            </button>
+            <button
+              className="icon-button"
+              type="button"
+              aria-label="Sign out"
+              title="Sign out"
+              disabled={disabled}
+              onClick={() => void toolbarAction(onLogout)}
+            >
+              <LogOut size={18} />
+            </button>
+          </div>
+        </div>
+      </header>
+      <main id="main" className="main-content">
+        <section id="overview" className="overview-heading">
+          <div>
+            <p className="eyebrow">
+              <span className="tiny-star">✦</span> A QUIET SPACE FOR YOUR DATA
+            </p>
+            <h1>
+              Weight, <em>with perspective.</em>
+            </h1>
+            <p>One reading at a time. The bigger picture is yours.</p>
+          </div>
+          <div className="data-actions">
+            <button
+              className="button secondary"
+              type="button"
+              disabled={disabled || !loaded || !entries.length}
+              onClick={() => void toolbarAction(exportData)}
+            >
+              <Download size={15} />
+              Export CSV
+            </button>
+            <button
+              className="button secondary"
+              type="button"
+              disabled={disabled || !loaded}
+              onClick={() => setDialog("import")}
+            >
+              <FileUp size={15} />
+              Import
+            </button>
+            <button
+              className="icon-button"
+              type="button"
+              title="Refresh readings"
+              aria-label="Refresh readings"
+              disabled={disabled}
+              onClick={() => void refresh()}
+            >
+              <RefreshCw size={16} className={loading ? "spin" : ""} />
+            </button>
+          </div>
+        </section>
+        {demo && (
+          <div className="demo-banner">
+            <span className="demo-badge">DEMO</span>Fictional readings for a little perspective. No
+            personal data.
+          </div>
+        )}
+        {error && (
+          <div className="notice notice-error" role="alert">
+            {error}
+            <button
+              className="text-button"
               type="button"
               onClick={() => void refresh()}
               disabled={loading}
             >
-              <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-              Refresh
+              Try again
+            </button>
+          </div>
+        )}
+        {!loaded ? (
+          <div className="loading-panel" role="status">
+            {loading ? (
+              <>
+                <LoaderCircle className="spin" size={25} />
+                <h2>Finding your perspective…</h2>
+                <p>Loading your readings and preferences.</p>
+              </>
+            ) : (
+              <>
+                <h2>Your tracker is temporarily unavailable.</h2>
+                <p>Use “Try again” above to reconnect.</p>
+              </>
+            )}
+          </div>
+        ) : (
+          <>
+            <StatsGrid stats={stats} unit={settings.unit} />
+            <div className="tracking-grid">
+              <WeightChart entries={entries} settings={settings} />
+              <aside>
+                <div ref={formRef} className="entry-anchor">
+                  <EntryForm
+                    key={settings.unit}
+                    unit={settings.unit}
+                    focusKey={focusKey}
+                    saving={saving || toolbarBusy}
+                    onSubmit={add}
+                  />
+                </div>
+                <div className="privacy-note">
+                  <ShieldCheck size={17} />
+                  <p>
+                    Just your data.<span>Saved on your server, always in your hands.</span>
+                  </p>
+                </div>
+              </aside>
+            </div>
+            <HistoryList
+              entries={entries}
+              saving={disabled}
+              unit={settings.unit}
+              onEdit={setEditing}
+              onDelete={(entry) => {
+                setDeleteError(null);
+                setDeleting(entry);
+              }}
+            />
+          </>
+        )}
+        <footer className="site-footer">
+          <span>
+            <Moon size={13} />
+            MoonWeight
+          </span>
+          <span>Private by design. Made for the everyday.</span>
+          <span>v1.0.0</span>
+        </footer>
+      </main>
+      {loaded && (
+        <button
+          type="button"
+          className="button primary mobile-add"
+          onClick={goToEntry}
+          disabled={disabled}
+        >
+          <Plus size={18} />
+          Add reading
+        </button>
+      )}
+      {notice && (
+        <div
+          className={`toast ${notice.error ? "toast-error" : ""}`}
+          role={notice.error ? "alert" : "status"}
+        >
+          <span>{notice.text}</span>
+          <button
+            className="icon-button"
+            aria-label="Dismiss notification"
+            type="button"
+            onClick={() => setNotice(null)}
+          >
+            <X size={15} />
+          </button>
+        </div>
+      )}
+      {editing && (
+        <Dialog title="Edit your reading" onClose={() => setEditing(null)} busy={saving}>
+          <EntryForm
+            editingEntry={editing}
+            unit={settings.unit}
+            saving={saving}
+            onCancel={() => setEditing(null)}
+            onSubmit={async (input) => {
+              await updateEntry(editing.id, { ...input, note: input.note ?? null });
+              setEditing(null);
+              notify("Entry updated.");
+            }}
+          />
+        </Dialog>
+      )}
+      {deleting && (
+        <Dialog title="Delete this reading?" onClose={() => setDeleting(null)} busy={saving}>
+          <div className="delete-reading">
+            <strong>{formatWeight(deleting.weightKg, settings.unit, 2)}</strong>
+            <span>{formatEntryDate(deleting.date)}</span>
+          </div>
+          <p className="muted">This entry and its note will be permanently removed.</p>
+          {deleteError && (
+            <p role="alert" className="notice notice-error">
+              {deleteError}
+            </p>
+          )}
+          <div className="form-actions">
+            <button
+              className="button secondary"
+              type="button"
+              autoFocus
+              data-dialog-focus=""
+              onClick={() => setDeleting(null)}
+              disabled={saving}
+            >
+              Keep entry
             </button>
             <button
-              className="inline-flex min-h-11 items-center gap-2 rounded-md border border-white/10 bg-night/60 px-3 text-sm font-medium text-periwinkle transition hover:border-danger/50 hover:text-danger"
+              className="button destructive"
               type="button"
-              onClick={() => void logout()}
+              onClick={() => void remove()}
+              disabled={saving}
             >
-              <LogOut className="h-4 w-4" />
-              Logout
+              {saving ? "Deleting…" : "Delete entry"}
             </button>
           </div>
-        </header>
-
-        {error ? (
-          <div className="rounded-lg border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-bone">{error}</div>
-        ) : null}
-
-        <section className="grid gap-5 lg:grid-cols-[360px_1fr]">
-          <div ref={formSectionRef} className="scroll-mt-3 lg:sticky lg:top-5 lg:self-start">
-            <EntryForm
-              editingEntry={editingEntry}
-              focusKey={formFocusKey}
-              onCancelEdit={() => setEditingEntry(null)}
-              onSubmit={handleSubmit}
-              saving={saving}
-            />
-          </div>
-
-          <div className="grid gap-5">
-            <StatsGrid stats={stats} />
-            <WeightChart entries={entries} />
-          </div>
-        </section>
-
-        <HistoryList
-          editingId={editingEntry?.id}
-          entries={entries}
-          onDelete={deleteEntry}
-          onEdit={handleEditEntry}
+        </Dialog>
+      )}
+      {dialog === "settings" && (
+        <SettingsDialog
+          settings={settings}
           saving={saving}
+          onClose={() => setDialog(null)}
+          onSave={async (input) => {
+            await saveSettings(input);
+            notify("Preferences saved.");
+          }}
         />
-      </div>
-
-      <button
-        className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 z-20 inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-violet px-4 text-sm font-semibold text-white shadow-glow transition hover:bg-lavender hover:text-night sm:hidden"
-        type="button"
-        onClick={handleStartNewEntry}
-      >
-        <Plus className="h-4 w-4" />
-        Add
-      </button>
-    </main>
+      )}
+      {dialog === "import" && (
+        <ImportDialog
+          entries={entries}
+          saving={saving}
+          onClose={() => setDialog(null)}
+          onImport={async (input) => {
+            const result = await importEntries(input);
+            notify(`${result.imported} entries imported; ${result.skipped} duplicates skipped.`);
+            return result;
+          }}
+        />
+      )}
+    </div>
+  );
+};
+export const App = () => {
+  const { authenticated, checkingAuth, authError, login, logout } = useAuth();
+  if (checkingAuth)
+    return (
+      <main className="session-loading" role="status">
+        <Moon size={28} />
+        <p>Opening your space…</p>
+      </main>
+    );
+  return authenticated ? (
+    <Tracker onLogout={logout} />
+  ) : (
+    <LoginScreen error={authError} onLogin={login} />
   );
 };
