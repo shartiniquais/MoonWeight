@@ -15,6 +15,9 @@ try {
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(baseURL);
+  await page.locator(".login-form").waitFor();
+  if (await page.getByRole("button", { name: "Use existing server password" }).isVisible())
+    await page.getByRole("button", { name: "Use existing server password" }).click();
   await page.evaluate(() => document.fonts.ready);
   // Login is synthetic only when the tracker passes the fixture guard below.
   await page.getByLabel("Password").fill(process.env.ADMIN_PASSWORD);
@@ -51,6 +54,9 @@ try {
     .getByRole("region", { name: "Weight chart", exact: true })
     .screenshot({ path: "docs/portfolio/mobile-chart.png" });
   await page.getByRole("button", { name: "Sign out" }).click();
+  await page.locator(".login-form").waitFor();
+  if (await page.getByRole("button", { name: "Use existing server password" }).isVisible())
+    await page.getByRole("button", { name: "Use existing server password" }).click();
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.evaluate(() => document.fonts.ready);
   await page.screenshot({ path: "docs/portfolio/login.png" });

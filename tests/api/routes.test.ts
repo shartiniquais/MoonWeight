@@ -6,7 +6,21 @@ const store = vi.hoisted(() => ({
   tokens: new Set<string>(),
   settings: { unit: "kg", targetWeightKg: null } as AppSettings,
   id: 0,
+  account: null as { id: number; username: string; passwordHash: string; createdAt: Date } | null,
 }));
+vi.mock("../../apps/api/src/repositories/account.js", async () => {
+  const { hashPassword } = await import("../../apps/api/src/auth/password.js");
+  return {
+    getAccount: async () => store.account,
+    createAccount: async (input: { username: string; password: string }) => {
+      const passwordHash = await hashPassword(input.password);
+      if (store.account) return false;
+      store.account = { id: 1, username: input.username, passwordHash, createdAt: new Date() };
+      store.tokens.clear();
+      return true;
+    },
+  };
+});
 vi.mock("../../apps/api/src/db/client.js", () => ({
   postgresClient: vi.fn(async () => []),
   db: {},
@@ -77,6 +91,7 @@ beforeEach(() => {
   store.entries.clear();
   store.tokens.clear();
   store.settings = { unit: "kg", targetWeightKg: null };
+  store.account = null;
 });
 describe("authentication and security boundaries", () => {
   it("sets Secure cookies when configured for HTTPS", async () => {
@@ -124,6 +139,7 @@ describe("authentication and security boundaries", () => {
     const cookie = await login();
     expect(await (await send("/api/auth/me", "GET", undefined, cookie)).json()).toEqual({
       authenticated: true,
+      setupRequired: true,
     });
     expect((await send("/api/auth/logout", "POST", undefined, cookie)).status).toBe(200);
     expect((await send("/api/weights", "GET", undefined, cookie)).status).toBe(401);
@@ -161,6 +177,57 @@ describe("authentication and security boundaries", () => {
       Origin: "https://attacker.example",
     });
     expect(rejected.headers.get("Access-Control-Allow-Origin")).toBeNull();
+  });
+});
+describe("private account setup", () => {
+  const input = {
+    setupKey: "fictional-test-password",
+    username: "fixture.owner",
+    password: "fictional-account-passphrase",
+  };
+  it("requires the setup key and validates the new account", async () => {
+    expect(
+      (await send("/api/auth/setup", "POST", { ...input, setupKey: "incorrect" })).status,
+    ).toBe(403);
+    expect((await send("/api/auth/setup", "POST", { ...input, password: "short" })).status).toBe(
+      400,
+    );
+    expect((await send("/api/auth/setup", "POST", { ...input, username: "bad name" })).status).toBe(
+      400,
+    );
+    expect(store.account).toBeNull();
+    expect((await send("/api/weights")).status).toBe(401);
+  });
+  it("creates one hashed account, signs in, and disables legacy access", async () => {
+    const legacyCookie = await login();
+    const setup = await send("/api/auth/setup", "POST", { ...input, username: " Fixture.Owner " });
+    expect(setup.status).toBe(201);
+    const cookie = setup.headers.get("Set-Cookie")!.split(";")[0];
+    expect(await setup.json()).toEqual({ authenticated: true, setupRequired: false });
+    expect(store.account?.username).toBe("fixture.owner");
+    expect(store.account?.passwordHash).toMatch(/^scrypt\$/);
+    expect(store.account?.passwordHash).not.toContain(input.password);
+    expect((await send("/api/weights", "GET", undefined, legacyCookie)).status).toBe(401);
+    expect((await send("/api/weights", "GET", undefined, cookie)).status).toBe(200);
+    expect((await send("/api/auth/setup", "POST", input)).status).toBe(409);
+    expect((await send("/api/auth/login", "POST", { password: input.setupKey })).status).toBe(401);
+    expect(
+      (await send("/api/auth/login", "POST", { username: "unknown", password: input.password }))
+        .status,
+    ).toBe(401);
+    expect(
+      (await send("/api/auth/login", "POST", { username: input.username, password: "incorrect" }))
+        .status,
+    ).toBe(401);
+    const signedIn = await send("/api/auth/login", "POST", {
+      username: " FIXTURE.OWNER ",
+      password: input.password,
+    });
+    expect(signedIn.status).toBe(200);
+    expect(await signedIn.json()).toEqual({ authenticated: true, setupRequired: false });
+    const session = signedIn.headers.get("Set-Cookie")!.split(";")[0];
+    await send("/api/auth/logout", "POST", undefined, session);
+    expect((await send("/api/weights", "GET", undefined, session)).status).toBe(401);
   });
 });
 describe("weight routes", () => {

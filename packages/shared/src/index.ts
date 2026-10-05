@@ -67,7 +67,26 @@ export const updateWeightEntryInputSchema = z
     "Provide at least one field",
   );
 export const loginInputSchema = z
-  .object({ password: z.string().min(1, "Password is required").max(1024) })
+  .object({
+    username: z.string().trim().toLowerCase().max(32).optional(),
+    password: z.string().min(1, "Password is required").max(1024),
+  })
+  .strict();
+export const setupAccountInputSchema = z
+  .object({
+    setupKey: z.string().min(1, "Setup key is required").max(1024),
+    username: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .min(3, "Username needs at least 3 characters")
+      .max(32, "Username must be 32 characters or less")
+      .regex(/^[a-z0-9][a-z0-9_.-]*$/, "Use letters, numbers, dots, dashes, or underscores"),
+    password: z
+      .string()
+      .min(12, "Use at least 12 characters for your password")
+      .max(128, "Password must be 128 characters or less"),
+  })
   .strict();
 export const settingsInputSchema = z
   .object({
@@ -81,13 +100,14 @@ export const importInputSchema = z
 export type CreateWeightEntryInput = z.infer<typeof createWeightEntryInputSchema>;
 export type UpdateWeightEntryInput = z.infer<typeof updateWeightEntryInputSchema>;
 export type LoginInput = z.infer<typeof loginInputSchema>;
+export type SetupAccountInput = z.infer<typeof setupAccountInputSchema>;
 export type AppSettings = z.infer<typeof settingsInputSchema>;
 export type WeightEntry = CreateWeightEntryInput & {
   id: string;
   createdAt: string;
   updatedAt: string;
 };
-export type AuthStatus = { authenticated: boolean };
+export type AuthStatus = { authenticated: boolean; setupRequired?: boolean };
 export type ApiError = {
   error: string;
   details?: { fieldErrors?: Record<string, string[] | undefined>; formErrors?: string[] };
@@ -187,7 +207,10 @@ export type CsvPreviewRow = {
 export const previewCsv = (csv: string, existing: WeightEntry[] = []): CsvPreviewRow[] => {
   if (new TextEncoder().encode(csv).length > 1_048_576)
     throw new Error("CSV must be 1 MB or smaller");
-  const result = Papa.parse<string[]>(csv.replace(/^\uFEFF/, ""), { skipEmptyLines: "greedy" });
+  const result = Papa.parse<string[]>(csv.replace(/^\uFEFF/, ""), {
+    delimiter: ",",
+    skipEmptyLines: "greedy",
+  });
   if (result.errors.length) throw new Error(`Unable to read CSV: ${result.errors[0].message}`);
   const [header, ...rows] = result.data;
   if (!header || header.join(",") !== "date,weight_kg,note")

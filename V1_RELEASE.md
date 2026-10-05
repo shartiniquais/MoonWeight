@@ -11,14 +11,17 @@ Verified locally on 5 October 2026. The v1 product is implemented and ready for 
 - Added persistent optional target and kg/lb preferences. Display changes never rewrite historical weights; note-only edits and target unit changes preserve canonical precision.
 - Implemented documented CSV export and robust preview/import, including rejected-row reports, spreadsheet formula escaping, duplicate skipping, bounded requests, repeated backend validation, and atomic insertion.
 - Replaced stateless signed cookies with random, hashed PostgreSQL sessions: actual revocation on logout, expiration, password/secret rotation, and restart persistence.
+- Added first-run owner-account creation with a private setup key, normalized username, confirmed password, salted scrypt storage, atomic single-owner claiming, and legacy-session revocation. The setup key cannot authenticate once an account exists.
+- Added `npm start`: generates private configuration only when absent, preserves existing files/data, builds and waits for Docker health, and prints the setup instructions. Fresh installations contain no demo data.
 - Hardened origins, JSON-only writes, request sizes, UUID/payload validation, configuration defaults, errors, cookie flags, database isolation, and production CSP.
 - Added locked, transactional, checksum-checked migrations, retaining original timestamps during the calendar-date upgrade.
 - Repaired clean-install typechecking, root environment loading, shared package watching, local port handling, API startup/migration, graceful shutdown, Docker health/dependency ordering, and workspace dependency packaging.
 - Updated vulnerable dependencies, including Vite 7 and Tailwind CSS 4, without changing the architecture. The final npm audit reports zero vulnerabilities.
-- Added automated tests, a GitHub Actions workflow, consistent formatting, an empty-only fictional seed, professional README/operations docs, a portfolio kit, and seven real screenshots.
+- Added automated tests, a GitHub Actions workflow, consistent formatting, an empty-only fictional seed, professional README/operations docs, a portfolio kit, and eight real screenshots (including the empty account-setup form).
 - Set all package versions and shared workspace references to **1.0.0**.
 
 No v1.1 features were implemented.
+The account/startup follow-up completes the original single-user product scope. A fresh personal deployment is available separately from the fictional portfolio showcase.
 
 ## 2. Architecture summary
 
@@ -32,7 +35,7 @@ flowchart LR
   Shared -.-> Hono
 ```
 
-PostgreSQL persists readings, singleton preferences, and hashed sessions. Reading dates use DATE; audit timestamps remain actual instants. Weight storage is NUMERIC(7,3) in kilograms. Multiple readings per day remain supported. The frontend renders stats from its entry snapshot using the same shared function as the stats API.
+PostgreSQL persists readings, singleton preferences, the single owner account with a salted password hash, and hashed sessions. Reading dates use DATE; audit timestamps remain actual instants. Weight storage is NUMERIC(7,3) in kilograms. Multiple readings per day remain supported. The frontend renders stats from its entry snapshot using the same shared function as the stats API.
 
 Production exposes only the loopback-bound web port. The API runs as a non-root user. PostgreSQL has no published port and uses an internal network. An external HTTPS proxy is required for public hosting.
 
@@ -44,8 +47,8 @@ Production exposes only the loopback-bound web port. The API runs as a non-root 
 | npm install in a source-only copy                   | Passed without copied .env, node_modules, or dist                                                                      |
 | npm run dev                                         | Running frontend, watched shared package, and automatically migrated API                                               |
 | npm run typecheck                                   | Passed, including scripts and test TypeScript                                                                          |
-| npm run test                                        | **61 passed**                                                                                                          |
-| npm run test:integration                            | **8 passed** against real PostgreSQL in a newly created temporary database                                             |
+| npm run test                                        | **65 passed**                                                                                                          |
+| npm run test:integration                            | **9 passed** against real PostgreSQL in a newly created temporary database                                             |
 | npm run build                                       | Passed for shared, API, and frontend                                                                                   |
 | npm audit                                           | **0 vulnerabilities**                                                                                                  |
 | npm run format:check                                | Passed                                                                                                                 |
@@ -62,6 +65,8 @@ Production exposes only the loopback-bound web port. The API runs as a non-root 
 | npm run portfolio:capture                           | Captured seven actual browser screenshots using fictional data                                                         |
 | Working-tree privacy scan                           | No non-loopback infrastructure IPs, personal username, credential-token patterns, or committed environment files found |
 | git diff --check                                    | Passed                                                                                                                 |
+
+Additional follow-up verification: the starter generated a new private configuration, started an empty isolated Docker deployment, and printed its setup instructions. Real mobile Chromium tests completed account creation, first reading, restart persistence, logout/login, and legacy-key lockout; Axe found no setup-screen violations. The personal installation on this machine runs at http://localhost:8083 because port 8080 belongs to an existing service. It remains empty and unclaimed for the owner.
 
 The temporary integration database is created and removed by the test runner. Browser tests create/delete their own fictional readings and restore preferences. Remote GitHub Actions has **not** been executed from this environment.
 

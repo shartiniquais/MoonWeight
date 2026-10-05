@@ -178,6 +178,7 @@ describe("CSV transfer", () => {
       "@formula",
       "'=already quoted",
       " ordinary",
+      "x".repeat(500),
     ]) {
       const entry = { ...reading("2025-05-01", 78.123), note: note.trim() };
       expect(previewCsv(exportCsv([entry]))[0].input).toMatchObject({

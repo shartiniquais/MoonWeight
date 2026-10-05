@@ -18,3 +18,9 @@ export const sessions = pgTable("sessions", {
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
 });
 export type WeightEntryRow = typeof weightEntries.$inferSelect;
+export const personalAccount = pgTable("personal_account", {
+  id: integer("id").primaryKey().default(1),
+  username: text("username").notNull(),
+  passwordHash: text("password_hash").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});

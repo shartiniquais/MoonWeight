@@ -56,7 +56,7 @@ describe("real PostgreSQL persistence", () => {
     expect(row.recorded_at_legacy).toContain("12:00:00");
     const migrations =
       await postgresClient`SELECT name, checksum FROM app_migrations ORDER BY name`;
-    expect(migrations).toHaveLength(2);
+    expect(migrations).toHaveLength(3);
     expect(
       migrations.every((row) => typeof row.checksum === "string" && row.checksum.length === 64),
     ).toBe(true);
@@ -179,5 +179,41 @@ describe("real PostgreSQL persistence", () => {
   });
   it("returns a useful readiness status", async () => {
     expect(await (await send("/health")).json()).toEqual({ status: "ok" });
+  });
+  it("claims the account once under concurrent setup, persists a hash, and revokes legacy sessions", async () => {
+    const legacyCookie = await login();
+    const input = {
+      setupKey: env.adminPassword,
+      username: "fixture.owner",
+      password: "fictional-new-account-passphrase",
+    };
+    const responses = await Promise.all([
+      send("/api/auth/setup", "POST", input),
+      send("/api/auth/setup", "POST", input),
+    ]);
+    expect(responses.map((r) => r.status).sort()).toEqual([201, 409]);
+    const cookie = responses
+      .find((r) => r.status === 201)!
+      .headers.get("Set-Cookie")!
+      .split(";")[0];
+    expect((await send("/api/weights", "GET", undefined, cookie)).status).toBe(200);
+    expect((await send("/api/weights", "GET", undefined, legacyCookie)).status).toBe(401);
+    expect((await send("/api/auth/login", "POST", { password: env.adminPassword })).status).toBe(
+      401,
+    );
+    const independent = postgres(env.databaseUrl, { max: 1 });
+    const [stored] = await independent`SELECT username, password_hash FROM personal_account`;
+    await independent.end();
+    expect(stored.username).toBe(input.username);
+    expect(stored.password_hash).toMatch(/^scrypt\$32768\$8\$1\$/);
+    expect(stored.password_hash).not.toContain(input.password);
+    const signedIn = await send("/api/auth/login", "POST", {
+      username: input.username,
+      password: input.password,
+    });
+    expect(signedIn.status).toBe(200);
+    await migrate();
+    expect((await send("/api/weights", "GET", undefined, cookie)).status).toBe(200);
+    await expect(createSessionToken(env.adminPassword)).rejects.toThrow();
   });
 });

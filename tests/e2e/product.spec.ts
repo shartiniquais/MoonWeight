@@ -1,9 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { readFile } from "node:fs/promises";
 import { previewCsv, type WeightEntry } from "@moonweight/shared";
 
 const login = async (page: Page) => {
   await page.goto("/");
+  await expect(page.locator(".login-form")).toBeVisible();
+  if (await page.getByRole("button", { name: "Use existing server password" }).isVisible())
+    await page.getByRole("button", { name: "Use existing server password" }).click();
   await expect(page.getByRole("heading", { name: "Welcome back." })).toBeVisible();
   const password = process.env.ADMIN_PASSWORD;
   if (!password) throw new Error("Configure .env before running browser smoke tests.");
@@ -90,9 +94,11 @@ test("login → create → refresh → edit → delete → logout", async ({ pag
     expect(entries.length).toBe(initialCount);
     createdId = undefined;
     await page.getByRole("button", { name: "Sign out" }).click();
+    await expect(page.locator(".login-form")).toBeVisible();
+    await page.getByRole("button", { name: "Use existing server password" }).click();
     await expect(page.getByRole("heading", { name: "Welcome back." })).toBeVisible();
     await page.reload();
-    await expect(page.getByLabel("Password")).toBeVisible();
+    await expect(page.getByLabel("Password", { exact: true })).toBeVisible();
     expect((await page.request.get("/api/weights")).status()).toBe(401);
     expect(errors).toEqual([]);
   } finally {
@@ -103,7 +109,9 @@ test("login → create → refresh → edit → delete → logout", async ({ pag
   }
 });
 
-test("preferences, chart ranges, CSV preview, export and responsive layout", async ({ page }) => {
+test("preferences, chart ranges, CSV preview, export and responsive layout", async ({
+  page,
+}, testInfo) => {
   await login(page);
   const previous = (await (await page.request.get("/api/settings")).json()) as {
     unit: string;
@@ -148,10 +156,23 @@ test("preferences, chart ranges, CSV preview, export and responsive layout", asy
     const downloadEvent = page.waitForEvent("download");
     await page.getByRole("button", { name: "Export CSV" }).click();
     const download = await downloadEvent;
-    const stream = await download.createReadStream();
-    const chunks: Buffer[] = [];
-    for await (const chunk of stream!) chunks.push(Buffer.from(chunk));
-    const csv = Buffer.concat(chunks).toString("utf8");
+    const downloadPath = testInfo.outputPath("moonweight.csv");
+    await download.saveAs(downloadPath);
+    expect(await download.failure()).toBeNull();
+    let csv = "";
+    await expect
+      .poll(async () => {
+        try {
+          csv = await readFile(downloadPath, "utf8");
+          return csv.startsWith("date,weight_kg,note");
+        } catch (error) {
+          // Windows scanners can briefly lock newly downloaded files.
+          if (["EPERM", "EBUSY"].includes((error as NodeJS.ErrnoException).code ?? ""))
+            return false;
+          throw error;
+        }
+      })
+      .toBe(true);
     expect(previewCsv(csv).every((row) => !row.error)).toBe(true);
     expect(csv.startsWith("date,weight_kg,note")).toBe(true);
     for (const width of [360, 768, 1024, 1920]) {
@@ -178,6 +199,9 @@ test("failed initial load can be retried and an expired session returns to sign-
     else await route.continue();
   });
   await page.goto("/");
+  await expect(page.locator(".login-form")).toBeVisible();
+  if (await page.getByRole("button", { name: "Use existing server password" }).isVisible())
+    await page.getByRole("button", { name: "Use existing server password" }).click();
   await page.getByLabel("Password").fill(process.env.ADMIN_PASSWORD!);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("Temporarily unavailable");
@@ -189,6 +213,6 @@ test("failed initial load can be retried and an expired session returns to sign-
   await expect(page.getByRole("heading", { name: "The longer view" })).toBeVisible();
   await page.request.post("/api/auth/logout", { headers: { "Content-Type": "application/json" } });
   await page.getByRole("button", { name: "Refresh readings" }).click();
-  await expect(page.getByLabel("Password")).toBeVisible();
+  await expect(page.getByLabel("Password", { exact: true })).toBeVisible();
   await expect(page.getByRole("alert")).toContainText("Your session has ended");
 });

@@ -1323,6 +1323,22 @@ textarea.input {
 .login-form .form-footnote {
   font-size: 9px;
 }
+.setup-page {
+  padding-top: 100px;
+  padding-bottom: 90px;
+}
+.setup-page .login-form .input {
+  margin-bottom: 12px;
+}
+.setup-page .login-form .field-help {
+  margin-top: -4px;
+  margin-bottom: 18px;
+}
+.account-switch {
+  display: block;
+  margin: 12px auto 0;
+  font-size: 12px;
+}
 .login-footer {
   position: absolute;
   bottom: 25px;

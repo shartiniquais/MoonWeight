@@ -4,6 +4,7 @@ import type {
   CreateWeightEntryInput,
   ImportResult,
   LoginInput,
+  SetupAccountInput,
   UpdateWeightEntryInput,
   WeightEntry,
 } from "@moonweight/shared";
@@ -57,6 +58,8 @@ export const apiClient = {
   getAuthStatus: () => request<AuthStatus>("/api/auth/me"),
   login: (input: LoginInput) =>
     request<AuthStatus>("/api/auth/login", { method: "POST", body: JSON.stringify(input) }),
+  setupAccount: (input: SetupAccountInput) =>
+    request<AuthStatus>("/api/auth/setup", { method: "POST", body: JSON.stringify(input) }),
   logout: () => request<AuthStatus>("/api/auth/logout", { method: "POST" }),
   listWeights: () => request<WeightEntry[]>("/api/weights"),
   createWeight: (input: CreateWeightEntryInput) =>

@@ -3,6 +3,9 @@
 ## Configuration
 
 Copy the root .env.example and replace all three secret placeholders. Keep .env private. Hex-generated values avoid shell/Compose quoting surprises. If using values containing dollar signs, single-quote them in the .env file so Compose does not interpolate them.
+Alternatively, `npm start` generates a new `.env` with random secrets when it does not exist, starts the Docker stack, and displays the one-time setup key. Existing configuration is never overwritten. `npm start -- --config .env.personal` selects an alternative private configuration file for the same Compose project.
+
+`ADMIN_PASSWORD` is the operator setup key. Choose the actual username and password in the first-run browser form; PostgreSQL stores only the salted account password hash. Once the account exists, the setup key cannot authenticate. A legacy installation can still sign in with its old environment password until setup is completed, preserving existing data.
 
 The API uses exact CORS origins. The default local deployment accepts localhost on ports 5173/8080. If you change WEB_PORT, update CORS_ORIGIN as well. Set COOKIE_SECURE=true and an HTTPS origin for a public deployment. Insecure production cookies are refused for non-loopback configured origins.
 
@@ -63,5 +66,15 @@ The seed refuses existing entries or customized settings. It has no force/reset 
 - Login works but is lost immediately: use HTTPS with secure cookies, or COOKIE_SECURE=false for localhost HTTP.
 - Local database port is unavailable: set an unused POSTGRES_PORT and recreate the development PostgreSQL container with the override.
 - Migration constraints fail on an older database: inspect its data privately and correct invalid rows before retrying. Do not delete migration history or silently discard readings.
-- Forgotten login password: change ADMIN_PASSWORD in .env and recreate the API. Existing sessions become invalid.
+- Forgotten account password: use the owner-only recovery procedure below. Changing ADMIN_PASSWORD does not bypass an existing account.
 - Application upgrade after long inactivity: review dependency/container updates and make a backup before rebuilding.
+
+## Owner-only account recovery
+
+There is no public password-reset endpoint. If you control the server and forget your username/password, take a private database backup first, then run:
+
+```sh
+docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "BEGIN; DELETE FROM personal_account; DELETE FROM sessions; COMMIT;"'
+```
+
+This removes only the account and sessions, preserving all readings and preferences. Change the private `ADMIN_PASSWORD` setup key in `.env`, recreate the API (`docker compose up -d api`), and run `npm start`. Use its key to create your replacement account in the browser. Keep setup/recovery access restricted to the server owner.

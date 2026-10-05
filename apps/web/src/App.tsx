@@ -370,7 +370,8 @@ const Tracker = ({ onLogout }: { onLogout: () => Promise<void> }) => {
   );
 };
 export const App = () => {
-  const { authenticated, checkingAuth, authError, login, logout } = useAuth();
+  const { authenticated, checkingAuth, authError, login, logout, setupRequired, setupAccount } =
+    useAuth();
   if (checkingAuth)
     return (
       <main className="session-loading" role="status">
@@ -381,6 +382,12 @@ export const App = () => {
   return authenticated ? (
     <Tracker onLogout={logout} />
   ) : (
-    <LoginScreen error={authError} onLogin={login} />
+    <LoginScreen
+      key={String(setupRequired)}
+      error={authError}
+      onLogin={login}
+      setupRequired={setupRequired}
+      onSetup={setupAccount}
+    />
   );
 };

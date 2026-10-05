@@ -54,6 +54,7 @@ flowchart LR
 ```
 
 The production API and PostgreSQL ports are not public. An external reverse proxy supplies HTTPS for an internet-facing deployment.
+First-run setup uses an operator-only key, a single database-serialized owner account, and salted scrypt password storage. `npm start` generates private configuration when needed and starts a healthy Docker deployment without automatically loading demo data.
 
 ## Screenshot checklist
 
@@ -72,8 +73,10 @@ npm run portfolio:capture
 | mobile-dashboard.png  | 390px dashboard with the same product hierarchy                                |
 | mobile-chart.png      | Chart controls and target on a small screen                                    |
 | login.png             | Restrained lunar identity and private sign-in                                  |
+| account-setup.png     | Real first-run username/password form, captured before entering any secrets    |
 
 The capture script checks for demo markers and rejects non-demo notes. Screenshots are direct browser captures, not generated mockups. It does not persist cookies or browser storage.
+The separate account-setup screenshot was captured from a new isolated Docker installation. To recreate it, open an unclaimed installation at a 1440 × 1100 viewport and capture the empty form before pasting the setup key.
 
 Manual alternatives: open localhost:5173, sign in, choose All time, use a 1440px desktop viewport or a 390px mobile viewport, and save the exact filenames above. Never capture a personal tracker.
 

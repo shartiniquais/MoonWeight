@@ -21,6 +21,31 @@ const fixture: WeightEntry = {
   updatedAt: "2025-05-01T00:00:00Z",
 };
 describe("critical frontend behavior", () => {
+  it("creates an account only after valid details and matching passwords", async () => {
+    const user = userEvent.setup();
+    const setup = vi.fn().mockResolvedValue(undefined);
+    render(<LoginScreen setupRequired onSetup={setup} onLogin={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "Create account" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Setup key is required");
+    await user.type(screen.getByLabelText("Setup key"), "fictional-test-password");
+    await user.type(screen.getByLabelText("Username"), "Fixture.Owner");
+    await user.type(
+      screen.getByLabelText("Password", { exact: true }),
+      "fictional-account-passphrase",
+    );
+    await user.type(screen.getByLabelText("Confirm password"), "a different passphrase");
+    await user.click(screen.getByRole("button", { name: "Create account" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Passwords do not match");
+    expect(setup).not.toHaveBeenCalled();
+    await user.clear(screen.getByLabelText("Confirm password"));
+    await user.type(screen.getByLabelText("Confirm password"), "fictional-account-passphrase");
+    await user.click(screen.getByRole("button", { name: "Create account" }));
+    expect(setup).toHaveBeenCalledWith({
+      setupKey: "fictional-test-password",
+      username: "fixture.owner",
+      password: "fictional-account-passphrase",
+    });
+  });
   it("changes display units without rounding a configured target", async () => {
     Object.defineProperty(HTMLDialogElement.prototype, "showModal", {
       configurable: true,
